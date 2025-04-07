@@ -10,10 +10,39 @@ const pdfParse = require('pdf-parse');
 // Load environment variables
 dotenv.config();
 
-// Initialize OpenAI
+// Check for API key presence
+if (!process.env.OPENAI_API_KEY) {
+    console.error("ERROR: OpenAI API key is missing! Make sure OPENAI_API_KEY is set in your environment variables.");
+    // Continue execution, but the application will fail on API calls
+}
+
+// Initialize OpenAI with better error handling
 const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY
+    apiKey: process.env.OPENAI_API_KEY,
 });
+
+// Log API key status (not the actual key)
+console.log("API Key status:", process.env.OPENAI_API_KEY ? "Key is present" : "No API key found");
+
+// Add a function to test the API key
+async function testApiKey() {
+    try {
+        console.log("Testing OpenAI API connection...");
+        const response = await openai.chat.completions.create({
+            model: "gpt-3.5-turbo",
+            messages: [{ role: "user", content: "Hello" }],
+            max_tokens: 5
+        });
+        console.log("API connection successful!");
+        return true;
+    } catch (error) {
+        console.error("OpenAI API connection failed:", error.message);
+        if (error.status === 401) {
+            console.error("Authentication error: Your API key may be invalid or expired.");
+        }
+        return false;
+    }
+}
 
 // Initialize Express app
 const app = express();
@@ -73,24 +102,39 @@ app.post('/api/summarize', upload.single('file'), async (req, res) => {
 
         console.log('PDF text extracted, length:', pdfText.length);
 
+        // Verify API key before making OpenAI calls
+        if (!process.env.OPENAI_API_KEY) {
+            throw new Error('OpenAI API key is missing. Please check your environment variables.');
+        }
+
         // First query to GPT-4o-mini to check if document is a bill or law
         console.log('Validating if document is a bill or law...');
         
-        const validationResponse = await openai.chat.completions.create({
-            model: 'gpt-4o-mini',
-            messages: [
-                {
-                    role: 'system',
-                    content: 'You are a helpful assistant that can identify whether a document is a legislative bill or law. Provide a clear yes or no answer.'
-                },
-                {
-                    role: 'user',
-                    content: `Is the following document a legislative bill or law? Respond with only "Yes" or "No".\n\n${pdfText.substring(0, 9000)}`
-                }
-            ],
-            temperature: 0.3,
-            max_tokens: 10
-        });
+        let validationResponse;
+        try {
+            validationResponse = await openai.chat.completions.create({
+                model: 'gpt-4o-mini',
+                messages: [
+                    {
+                        role: 'system',
+                        content: 'You are a helpful assistant that can identify whether a document is a legislative bill or law. Provide a clear yes or no answer.'
+                    },
+                    {
+                        role: 'user',
+                        content: `Is the following document a legislative bill or law? Respond with only "Yes" or "No".\n\n${pdfText.substring(0, 9000)}`
+                    }
+                ],
+                temperature: 0.3,
+                max_tokens: 10
+            });
+        } catch (error) {
+            console.error('Error during API call:', error);
+            if (error.status === 401) {
+                throw new Error('Authentication failed: Your OpenAI API key is invalid or expired. Please check your environment variables.');
+            } else {
+                throw new Error(`OpenAI API error: ${error.message}`);
+            }
+        }
 
         const isLegislation = validationResponse.choices[0].message.content.toLowerCase().includes('yes');
         console.log('Is legislation validation result:', isLegislation);
@@ -303,6 +347,11 @@ app.post('/api/search', async (req, res) => {
             return res.status(400).json({ error: 'Please provide at least one piece of information about the bill' });
         }
 
+        // Verify API key before making OpenAI calls
+        if (!process.env.OPENAI_API_KEY) {
+            throw new Error('OpenAI API key is missing. Please check your environment variables.');
+        }
+
         // Create search prompt
         console.log('Sending search request to OpenAI...');
         
@@ -456,6 +505,15 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', message: 'Server is running' });
 });
 
+// Add API key verification endpoint
+app.get('/api/verify-key', async (req, res) => {
+    const keyStatus = await testApiKey();
+    res.json({ 
+        status: keyStatus ? 'ok' : 'error',
+        message: keyStatus ? 'API key is valid' : 'API key is invalid or missing'
+    });
+});
+
 // Add fallback for uploads directory
 app.use('/uploads', (req, res, next) => {
     const uploadsDir = path.join(__dirname, 'uploads');
@@ -479,19 +537,30 @@ app.use((err, req, res, next) => {
     });
 });
 
-// Start the server
-app.listen(port, () => {
+// Start the server with API key verification
+app.listen(port, async () => {
     console.log(`Server running on port ${port}`);
     console.log(`Open your browser and navigate to http://localhost:${port}`);
     console.log(`API endpoints available at:`);
     console.log(`- POST /api/summarize (for bill analysis)`);
     console.log(`- POST /api/search (for bill search)`);
     console.log(`- GET /api/health (for server health check)`);
+    console.log(`- GET /api/verify-key (for API key verification)`);
     
     // Make sure uploads directory exists
     const uploadsDir = path.join(__dirname, 'uploads');
     if (!fs.existsSync(uploadsDir)) {
         fs.mkdirSync(uploadsDir);
         console.log('Created uploads directory');
+    }
+    
+    // Test API key on startup
+    const apiKeyValid = await testApiKey();
+    if (!apiKeyValid) {
+        console.warn("\nWARNING: Your OpenAI API key may be invalid or missing!");
+        console.warn("The application will start but API calls will fail.");
+        console.warn("Please check your environment variables and make sure OPENAI_API_KEY is set correctly.");
+    } else {
+        console.log("\nAPI key verification successful! The application is ready to use.");
     }
 });
