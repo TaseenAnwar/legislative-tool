@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Taseen's Legislative AI Tool</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Taseen's Legislative AI Tool</h1>
+            <p>Your intelligent assistant for analyzing and searching legislation</p>
+        </header>
+
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="summarizer">Bill Summarizer</button>
+            <button class="tab-btn" data-tab="searcher">Bill Searcher</button>
+        </div>
+
+        <main>
+            <section id="summarizer" class="tab-content active">
+                <div class="card">
+                    <h2>Bill Summarizer</h2>
+                    <p>Upload a legislative bill PDF to get a comprehensive analysis.</p>
+                    
+                    <form id="summarizer-form" enctype="multipart/form-data">
+                        <div class="file-upload">
+                            <label for="bill-pdf">
+                                <i class="fas fa-file-pdf"></i>
+                                <span>Choose PDF file</span>
+                            </label>
+                            <input type="file" id="bill-pdf" name="file" accept=".pdf" required>
+                            <div id="file-name-display"></div>
+                        </div>
+                        
+                        <button type="submit" class="btn">
+                            <i class="fas fa-search"></i> Analyze Bill
+                        </button>
+                    </form>
+                    
+                    <div class="loading-indicator hidden">
+                        <div class="spinner"></div>
+                        <p>Analyzing your bill... This may take a minute.</p>
+                    </div>
+                </div>
+                
+                <div id="summary-results" class="results hidden">
+                    <div class="results-header">
+                        <h2>Bill Analysis Results</h2>
+                        <button id="back-to-summarizer" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left"></i> Analyze Another Bill
+                        </button>
+                    </div>
+                    <div id="summary-content"></div>
+                </div>
+            </section>
+
+            <section id="searcher" class="tab-content">
+                <div class="card">
+                    <h2>Bill Searcher</h2>
+                    <p>Search for details on any legislative bill.</p>
+                    
+                    <form id="searcher-form">
+                        <div class="form-group">
+                            <label for="bill-name">Bill Name (optional)</label>
+                            <input type="text" id="bill-name" placeholder="e.g., Affordable Care Act">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="bill-number">Bill Number (optional)</label>
+                            <input type="text" id="bill-number" placeholder="e.g., H.R. 3590, S.B. 1234">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="bill-state">State or Federal</label>
+                            <select id="bill-state" required>
+                                <option value="">Select jurisdiction</option>
+                                <option value="federal">Federal</option>
+                                <option value="alabama">Alabama</option>
+                                <option value="alaska">Alaska</option>
+                                <option value="arizona">Arizona</option>
+                                <option value="arkansas">Arkansas</option>
+                                <option value="california">California</option>
+                                <option value="colorado">Colorado</option>
+                                <option value="connecticut">Connecticut</option>
+                                <option value="delaware">Delaware</option>
+                                <option value="florida">Florida</option>
+                                <option value="georgia">Georgia</option>
+                                <option value="hawaii">Hawaii</option>
+                                <option value="idaho">Idaho</option>
+                                <option value="illinois">Illinois</option>
+                                <option value="indiana">Indiana</option>
+                                <option value="iowa">Iowa</option>
+                                <option value="kansas">Kansas</option>
+                                <option value="kentucky">Kentucky</option>
+                                <option value="louisiana">Louisiana</option>
+                                <option value="maine">Maine</option>
+                                <option value="maryland">Maryland</option>
+                                <option value="massachusetts">Massachusetts</option>
+                                <option value="michigan">Michigan</option>
+                                <option value="minnesota">Minnesota</option>
+                                <option value="mississippi">Mississippi</option>
+                                <option value="missouri">Missouri</option>
+                                <option value="montana">Montana</option>
+                                <option value="nebraska">Nebraska</option>
+                                <option value="nevada">Nevada</option>
+                                <option value="new-hampshire">New Hampshire</option>
+                                <option value="new-jersey">New Jersey</option>
+                                <option value="new-mexico">New Mexico</option>
+                                <option value="new-york">New York</option>
+                                <option value="north-carolina">North Carolina</option>
+                                <option value="north-dakota">North Dakota</option>
+                                <option value="ohio">Ohio</option>
+                                <option value="oklahoma">Oklahoma</option>
+                                <option value="oregon">Oregon</option>
+                                <option value="pennsylvania">Pennsylvania</option>
+                                <option value="rhode-island">Rhode Island</option>
+                                <option value="south-carolina">South Carolina</option>
+                                <option value="south-dakota">South Dakota</option>
+                                <option value="tennessee">Tennessee</option>
+                                <option value="texas">Texas</option>
+                                <option value="utah">Utah</option>
+                                <option value="vermont">Vermont</option>
+                                <option value="virginia">Virginia</option>
+                                <option value="washington">Washington</option>
+                                <option value="west-virginia">West Virginia</option>
+                                <option value="wisconsin">Wisconsin</option>
+                                <option value="wyoming">Wyoming</option>
+                                <option value="district-of-columbia">District of Columbia</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="bill-year">Year Introduced (optional)</label>
+                            <input type="number" id="bill-year" min="1900" max="2100" placeholder="e.g., 2025">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="additional-info">Additional Information (optional)</label>
+                            <textarea id="additional-info" placeholder="Any other details that might help identify the bill..."></textarea>
+                        </div>
+                        
+                        <button type="submit" class="btn">
+                            <i class="fas fa-search"></i> Search Bill
+                        </button>
+                    </form>
+                    
+                    <div class="loading-indicator hidden">
+                        <div class="spinner"></div>
+                        <p>Searching for bill information... This may take a minute.</p>
+                    </div>
+                </div>
+                
+                <div id="search-results" class="results hidden">
+                    <div class="results-header">
+                        <h2>Bill Search Results</h2>
+                        <button id="back-to-searcher" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left"></i> Search Another Bill
+                        </button>
+                    </div>
+                    <div id="search-content"></div>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>&copy; 2025 Taseen's Legislative AI Tool. All rights reserved.</p>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

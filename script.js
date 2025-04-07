@@ -5,6 +5,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     tabButtons.forEach(button => {
         button.addEventListener('click', () => {
+            console.log('Tab clicked:', button.getAttribute('data-tab'));
+            
             // Remove active class from all tabs
             tabButtons.forEach(btn => btn.classList.remove('active'));
             tabContents.forEach(content => content.classList.remove('active'));
@@ -12,7 +14,12 @@ document.addEventListener('DOMContentLoaded', function() {
             // Add active class to current tab
             button.classList.add('active');
             const tabId = button.getAttribute('data-tab');
-            document.getElementById(tabId).classList.add('active');
+            const tabContent = document.getElementById(tabId);
+            if (tabContent) {
+                tabContent.classList.add('active');
+            } else {
+                console.error('Tab content not found:', tabId);
+            }
         });
     });
 
@@ -20,145 +27,180 @@ document.addEventListener('DOMContentLoaded', function() {
     const fileInput = document.getElementById('bill-pdf');
     const fileNameDisplay = document.getElementById('file-name-display');
 
-    fileInput.addEventListener('change', function() {
-        if (this.files && this.files[0]) {
-            const fileName = this.files[0].name;
-            fileNameDisplay.textContent = fileName;
-            fileNameDisplay.style.color = '#27ae60';
-        } else {
-            fileNameDisplay.textContent = '';
-        }
-    });
+    if (fileInput && fileNameDisplay) {
+        fileInput.addEventListener('change', function() {
+            if (this.files && this.files[0]) {
+                const fileName = this.files[0].name;
+                fileNameDisplay.textContent = `Selected file: ${fileName}`;
+                fileNameDisplay.style.color = '#27ae60';
+                console.log('File selected:', fileName);
+            } else {
+                fileNameDisplay.textContent = '';
+            }
+        });
+    } else {
+        console.error('File input or display element not found');
+    }
 
     // Bill Summarizer Form Submission
     const summarizerForm = document.getElementById('summarizer-form');
-    const summarizerLoadingIndicator = document.querySelector('#summarizer .loading-indicator');
-    const summaryResults = document.getElementById('summary-results');
-    const summaryContent = document.getElementById('summary-content');
+    
+    if (summarizerForm) {
+        const summarizerLoadingIndicator = document.querySelector('#summarizer .loading-indicator');
+        const summaryResults = document.getElementById('summary-results');
+        const summaryContent = document.getElementById('summary-content');
 
-    summarizerForm.addEventListener('submit', async function(e) {
-        e.preventDefault();
-        
-        const fileInput = document.getElementById('bill-pdf');
-        if (!fileInput.files || !fileInput.files[0]) {
-            alert('Please select a PDF file');
-            return;
-        }
-
-        // Hide form, show loading indicator
-        summarizerForm.classList.add('hidden');
-        summarizerLoadingIndicator.classList.remove('hidden');
-
-        try {
-            // Create FormData object for file upload
-            const formData = new FormData();
-            formData.append('file', fileInput.files[0]);
-
-            // Send request to server
-            const response = await fetch('/api/summarize', {
-                method: 'POST',
-                body: formData
-            });
-
-            if (!response.ok) {
-                throw new Error('Server responded with an error');
+        summarizerForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            console.log('Summarizer form submitted');
+            
+            const fileInput = document.getElementById('bill-pdf');
+            if (!fileInput.files || !fileInput.files[0]) {
+                alert('Please select a PDF file');
+                return;
             }
 
-            const data = await response.json();
-            
-            // Format and display the results
-            displayBillSummary(data);
-            
-            // Hide loading indicator, show results
-            summarizerLoadingIndicator.classList.add('hidden');
-            summaryResults.classList.remove('hidden');
-        } catch (error) {
-            console.error('Error:', error);
-            alert('An error occurred while analyzing the bill. Please try again.');
-            
-            // Hide loading indicator, show form again
-            summarizerLoadingIndicator.classList.add('hidden');
-            summarizerForm.classList.remove('hidden');
-        }
-    });
+            // Hide form, show loading indicator
+            summarizerForm.classList.add('hidden');
+            summarizerLoadingIndicator.classList.remove('hidden');
+
+            try {
+                // Create FormData object for file upload
+                const formData = new FormData();
+                formData.append('file', fileInput.files[0]);
+
+                console.log('Sending file to server...');
+                
+                // Send request to server
+                const response = await fetch('/api/summarize', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                console.log('Response received:', response.status);
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Server responded with an error');
+                }
+
+                const data = await response.json();
+                console.log('Data received:', data);
+                
+                // Format and display the results
+                displayBillSummary(data);
+                
+                // Hide loading indicator, show results
+                summarizerLoadingIndicator.classList.add('hidden');
+                summaryResults.classList.remove('hidden');
+            } catch (error) {
+                console.error('Error:', error);
+                alert('An error occurred while analyzing the bill: ' + error.message);
+                
+                // Hide loading indicator, show form again
+                summarizerLoadingIndicator.classList.add('hidden');
+                summarizerForm.classList.remove('hidden');
+            }
+        });
+    } else {
+        console.error('Summarizer form not found');
+    }
 
     // Bill Searcher Form Submission
     const searcherForm = document.getElementById('searcher-form');
-    const searcherLoadingIndicator = document.querySelector('#searcher .loading-indicator');
-    const searchResults = document.getElementById('search-results');
-    const searchContent = document.getElementById('search-content');
+    
+    if (searcherForm) {
+        const searcherLoadingIndicator = document.querySelector('#searcher .loading-indicator');
+        const searchResults = document.getElementById('search-results');
+        const searchContent = document.getElementById('search-content');
 
-    searcherForm.addEventListener('submit', async function(e) {
-        e.preventDefault();
-        
-        const billName = document.getElementById('bill-name').value;
-        const billNumber = document.getElementById('bill-number').value;
-        const billState = document.getElementById('bill-state').value;
-        const additionalInfo = document.getElementById('additional-info').value;
+        searcherForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            console.log('Searcher form submitted');
+            
+            const billName = document.getElementById('bill-name').value;
+            const billNumber = document.getElementById('bill-number').value;
+            const billState = document.getElementById('bill-state').value;
+            const additionalInfo = document.getElementById('additional-info').value;
 
-        if (!billState) {
-            alert('Please select a state or federal jurisdiction');
-            return;
-        }
-
-        if (!billName && !billNumber && !additionalInfo) {
-            alert('Please provide at least one piece of information about the bill');
-            return;
-        }
-
-        // Hide form, show loading indicator
-        searcherForm.classList.add('hidden');
-        searcherLoadingIndicator.classList.remove('hidden');
-
-        try {
-            // Send request to server
-            const response = await fetch('/api/search', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    billName,
-                    billNumber,
-                    billState,
-                    additionalInfo
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error('Server responded with an error');
+            if (!billState) {
+                alert('Please select a state or federal jurisdiction');
+                return;
             }
 
-            const data = await response.json();
-            
-            // Format and display the results
-            displayBillSearch(data);
-            
-            // Hide loading indicator, show results
-            searcherLoadingIndicator.classList.add('hidden');
-            searchResults.classList.remove('hidden');
-        } catch (error) {
-            console.error('Error:', error);
-            alert('An error occurred while searching for the bill. Please try again.');
-            
-            // Hide loading indicator, show form again
-            searcherLoadingIndicator.classList.add('hidden');
-            searcherForm.classList.remove('hidden');
-        }
-    });
+            if (!billName && !billNumber && !additionalInfo) {
+                alert('Please provide at least one piece of information about the bill');
+                return;
+            }
+
+            // Hide form, show loading indicator
+            searcherForm.classList.add('hidden');
+            searcherLoadingIndicator.classList.remove('hidden');
+
+            try {
+                console.log('Sending search request to server...');
+                
+                // Send request to server
+                const response = await fetch('/api/search', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        billName,
+                        billNumber,
+                        billState,
+                        additionalInfo
+                    })
+                });
+
+                console.log('Response received:', response.status);
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Server responded with an error');
+                }
+
+                const data = await response.json();
+                console.log('Data received:', data);
+                
+                // Format and display the results
+                displayBillSearch(data);
+                
+                // Hide loading indicator, show results
+                searcherLoadingIndicator.classList.add('hidden');
+                searchResults.classList.remove('hidden');
+            } catch (error) {
+                console.error('Error:', error);
+                alert('An error occurred while searching for the bill: ' + error.message);
+                
+                // Hide loading indicator, show form again
+                searcherLoadingIndicator.classList.add('hidden');
+                searcherForm.classList.remove('hidden');
+            }
+        });
+    } else {
+        console.error('Searcher form not found');
+    }
 
     // "Back" button functionality
-    document.getElementById('back-to-summarizer').addEventListener('click', function() {
-        summaryResults.classList.add('hidden');
-        summarizerForm.classList.remove('hidden');
-        fileInput.value = '';
-        fileNameDisplay.textContent = '';
-    });
+    const backToSummarizerBtn = document.getElementById('back-to-summarizer');
+    if (backToSummarizerBtn) {
+        backToSummarizerBtn.addEventListener('click', function() {
+            document.getElementById('summary-results').classList.add('hidden');
+            document.getElementById('summarizer-form').classList.remove('hidden');
+            document.getElementById('bill-pdf').value = '';
+            document.getElementById('file-name-display').textContent = '';
+        });
+    }
 
-    document.getElementById('back-to-searcher').addEventListener('click', function() {
-        searchResults.classList.add('hidden');
-        searcherForm.classList.remove('hidden');
-    });
+    const backToSearcherBtn = document.getElementById('back-to-searcher');
+    if (backToSearcherBtn) {
+        backToSearcherBtn.addEventListener('click', function() {
+            document.getElementById('search-results').classList.add('hidden');
+            document.getElementById('searcher-form').classList.remove('hidden');
+        });
+    }
 
     // Function to display bill summary results
     function displayBillSummary(data) {
@@ -352,3 +394,4 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
         `;
     }
+});

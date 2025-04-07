@@ -57,19 +57,25 @@ const upload = multer({
 // Routes
 app.post('/api/summarize', upload.single('file'), async (req, res) => {
     try {
+        console.log('Summarize API called');
+        
         if (!req.file) {
+            console.log('No file uploaded');
             return res.status(400).json({ error: 'No file uploaded' });
         }
+
+        console.log('File uploaded:', req.file.path);
 
         // Parse PDF text
         const pdfBuffer = fs.readFileSync(req.file.path);
         const pdfData = await pdfParse(pdfBuffer);
         const pdfText = pdfData.text;
 
-        // Delete the uploaded file after parsing
-        fs.unlinkSync(req.file.path);
+        console.log('PDF text extracted, length:', pdfText.length);
 
         // First query to GPT-4o-mini to check if document is a bill or law
+        console.log('Validating if document is a bill or law...');
+        
         const validationResponse = await openai.chat.completions.create({
             model: 'gpt-4o-mini',
             messages: [
@@ -87,14 +93,20 @@ app.post('/api/summarize', upload.single('file'), async (req, res) => {
         });
 
         const isLegislation = validationResponse.choices[0].message.content.toLowerCase().includes('yes');
+        console.log('Is legislation validation result:', isLegislation);
 
         if (!isLegislation) {
+            // Delete the uploaded file
+            fs.unlinkSync(req.file.path);
+            
             return res.status(400).json({ 
                 error: 'The uploaded document does not appear to be a legislative bill or law. This tool only summarizes legislation.'
             });
         }
 
         // First pass: Analyze bill based on text only
+        console.log('Performing initial analysis of the bill...');
+        
         const initialAnalysis = await openai.chat.completions.create({
             model: 'gpt-4o-mini',
             messages: [
@@ -102,16 +114,23 @@ app.post('/api/summarize', upload.single('file'), async (req, res) => {
                     role: 'system',
                     content: `You are a legislative analyst. Analyze the provided bill or law and extract the following information:
                     
-                    1. The Bill Number
-                    2. The Bill Name
-                    3. The state the legislation has been proposed in
-                    4. The year the bill was introduced
-                    5. Bill sponsor(s)
-                    6. Bill cosponsor(s)
-                    7. Committee referred to
-                    8. Summary of what the bill does, including a breakdown of the sections of the bill if applicable
+                    1. Bill Number (billNumber) - include the exact bill number as shown in the document
+                    2. Bill Name (billName) - include the full title as shown in the document
+                    3. State (state) - the state the legislation has been proposed in
+                    4. Year Introduced (yearIntroduced) - the year the bill was introduced
+                    5. Sponsors (sponsors) - list all primary sponsors
+                    6. Cosponsors (cosponsors) - list all cosponsors, if many, include all names
+                    7. Committee (committee) - committee referred to
+                    8. Summary (summary) - write at least 300 words summarizing the purpose and main provisions
+                       - Include a detailed breakdown of each section of the bill
+                       - Ensure the summary is comprehensive enough for a legislator to speak knowledgeably about the bill
+                       - Highlight key provisions, requirements, and implications
+                    9. Sections (sections) - array of objects, each with 'number' and 'description' properties
                     
-                    Base your analysis ONLY on the text provided, without any external research. Provide the information in a JSON format.`
+                    Base your analysis ONLY on the text provided, without any external research. 
+                    Provide the information in a JSON format with the exact field names shown in parentheses above.
+                    Make sure the summary is thorough and detailed, at least 300 words long.
+                    Do not use snake_case for field names - use the exact field names provided above.`
                 },
                 {
                     role: 'user',
@@ -119,13 +138,16 @@ app.post('/api/summarize', upload.single('file'), async (req, res) => {
                 }
             ],
             temperature: 0.3,
-            max_tokens: 2500,
+            max_tokens: 4000,
             response_format: { type: 'json_object' }
         });
 
         const initialData = JSON.parse(initialAnalysis.choices[0].message.content);
+        console.log('Initial analysis complete:', initialData);
 
         // Second pass: Complete the analysis with additional research
+        console.log('Performing research-based analysis...');
+        
         const secondAnalysis = await openai.chat.completions.create({
             model: 'gpt-4o-mini',
             messages: [
@@ -133,54 +155,145 @@ app.post('/api/summarize', upload.single('file'), async (req, res) => {
                     role: 'system',
                     content: `You are a legislative analyst. You have been provided with the text of a bill or law and some initial analysis.
                     
-                    Now, CONDUCT RESEARCH to provide the following additional information:
+                    CONDUCT THOROUGH RESEARCH to provide the following additional information:
                     
-                    1. Financial implications or appropriations of the bill
-                    2. Ideological leaning of the bill
-                    3. Different advocacy groups' positions on the bill (focus on state-specific groups if relevant)
-                    4. What the bill changes about existing law
-                    5. Other states with a similar law (including statute citations)
-                    6. Other important factors to consider
+                    1. Financial implications or appropriations of the bill (financialImplications):
+                       - Provide detailed information about the cost of implementation
+                       - Include specific dollar amounts if available
+                       - Describe funding mechanisms or sources mentioned
+                       - Write at least 150 words on this topic
+                    
+                    2. Ideological leaning of the bill (ideologicalLeaning):
+                       - Analyze whether the bill aligns with conservative, progressive, or moderate positions
+                       - Explain the reasoning behind your analysis
+                       - Identify the political philosophy or values reflected in the bill
+                       - Write at least 150 words on this topic
+                    
+                    3. Different advocacy groups' positions on the bill (advocacyGroupPositions):
+                       - Research specific advocacy groups that have taken positions on this bill
+                       - For state bills, focus on relevant state-level advocacy groups
+                       - Include both supporters and opponents of the bill when available
+                       - Explain each group's reasoning for their position
+                       - Write at least 200 words on this topic
+                    
+                    4. What the bill changes about existing law (changesTo):
+                       - Describe the current legal status quo
+                       - Explain specifically how this bill modifies, replaces, or adds to existing law
+                       - Identify key changes and their significance
+                       - Write at least 150 words on this topic
+                    
+                    5. Other states with similar laws on their books (similarLaws):
+                       - Identify at least 3-5 states with similar legislation if they exist
+                       - Include specific statute citations whenever possible
+                       - Describe key similarities and differences between those laws and this bill
+                       - Write at least 150 words on this topic
+                    
+                    6. Other factors to consider (otherFactors):
+                       - Include any relevant information not covered in the above categories
+                       - Discuss implementation challenges, legal concerns, or potential unintended consequences
+                       - Address any controversial aspects of the bill
+                       - Write at least 150 words on this topic
                     
                     Add "(AI)" at the end of any sentence that contains information from your research.
                     
                     Provide the information in a JSON format with the following fields:
-                    - financialImplications
-                    - ideologicalLeaning
-                    - advocacyGroupPositions
-                    - changesTo
-                    - similarLaws
-                    - otherFactors
-                    - citations (an array of sources you used)`
+                    - financialImplications (string)
+                    - ideologicalLeaning (string)
+                    - advocacyGroupPositions (string)
+                    - changesTo (string)
+                    - similarLaws (string)
+                    - otherFactors (string)
+                    - citations (an array of sources you used)
+                    
+                    Each string field should be a detailed paragraph of at least 150-200 words, NOT an object or nested structure.`
                 },
                 {
                     role: 'user',
-                    content: `Bill information:\n${JSON.stringify(initialData, null, 2)}\n\nOriginal Bill Text:\n${pdfText.substring(0, 8000)}`
+                    content: `Bill information:\n${JSON.stringify(initialData, null, 2)}\n\nOriginal Bill Text:\n${pdfText.substring(0, 8000)}\n\nIMPORTANT: Each of the strings in your response (financialImplications, ideologicalLeaning, etc.) should be a detailed paragraph of at least 150-200 words, NOT an object or nested structure. Make sure your response is properly formatted as a flat JSON object with string values, not nested objects.`
                 }
             ],
             temperature: 0.3,
-            max_tokens: 2500,
+            max_tokens: 4000,
             response_format: { type: 'json_object' }
         });
 
-        const researchData = JSON.parse(secondAnalysis.choices[0].message.content);
+        // Parse the JSON response, handling potential errors
+        let researchData;
+        try {
+            researchData = JSON.parse(secondAnalysis.choices[0].message.content);
+            console.log('Research-based analysis complete');
+            
+            // Validate that the research data is properly formatted
+            const expectedFields = ['financialImplications', 'ideologicalLeaning', 'advocacyGroupPositions', 
+                                   'changesTo', 'similarLaws', 'otherFactors', 'citations'];
+            
+            for (const field of expectedFields) {
+                // Check if the field exists and is not an object
+                if (researchData[field] === undefined) {
+                    console.log(`Missing field in research data: ${field}`);
+                    researchData[field] = `Information about ${field.replace(/([A-Z])/g, ' $1').toLowerCase()} is not available at this time.`;
+                } else if (typeof researchData[field] === 'object' && !Array.isArray(researchData[field])) {
+                    console.log(`Field is an object instead of string: ${field}`);
+                    researchData[field] = `Information about ${field.replace(/([A-Z])/g, ' $1').toLowerCase()} is not properly formatted. Please review the bill text for details.`;
+                }
+            }
+            
+        } catch (error) {
+            console.error('Error parsing research data:', error);
+            // Provide default values if parsing fails
+            researchData = {
+                financialImplications: "The financial implications could not be determined at this time.",
+                ideologicalLeaning: "The ideological leaning could not be determined at this time.",
+                advocacyGroupPositions: "Information on advocacy group positions could not be determined at this time.",
+                changesTo: "The changes to existing law could not be determined at this time.",
+                similarLaws: "Information on similar laws in other states could not be determined at this time.",
+                otherFactors: "Additional factors to consider could not be determined at this time.",
+                citations: []
+            };
+        }
 
         // Combine the data from both analyses
         const combinedData = {
-            ...initialData,
-            ...researchData
+            billNumber: initialData.billNumber,
+            billName: initialData.billName,
+            state: initialData.state,
+            yearIntroduced: initialData.yearIntroduced,
+            sponsors: initialData.sponsors,
+            cosponsors: initialData.cosponsors,
+            committee: initialData.committee,
+            summary: initialData.summary,
+            sections: initialData.sections || [],
+            financialImplications: researchData.financialImplications,
+            ideologicalLeaning: researchData.ideologicalLeaning,
+            advocacyGroupPositions: researchData.advocacyGroupPositions,
+            changesTo: researchData.changesTo,
+            similarLaws: researchData.similarLaws,
+            otherFactors: researchData.otherFactors,
+            citations: researchData.citations || []
         };
 
+        // Delete the uploaded file after processing
+        fs.unlinkSync(req.file.path);
+        
+        console.log('Sending combined results to client');
         res.json(combinedData);
     } catch (error) {
         console.error('Error processing file:', error);
+        
+        // Clean up the uploaded file if it exists
+        if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
+        
         res.status(500).json({ error: 'Error processing file: ' + error.message });
     }
 });
 
 app.post('/api/search', async (req, res) => {
     try {
-        const { billName, billNumber, billState, additionalInfo } = req.body;
+        console.log('Search API called with data:', req.body);
+        
+        const { billName, billNumber, billState, billYear, additionalInfo } = req.body;
 
         if (!billState) {
             return res.status(400).json({ error: 'State or federal jurisdiction is required' });
@@ -191,24 +304,71 @@ app.post('/api/search', async (req, res) => {
         }
 
         // Create search prompt
+        console.log('Sending search request to OpenAI...');
+        
         const searchPrompt = await openai.chat.completions.create({
             model: 'gpt-4o-mini',
             messages: [
                 {
                     role: 'system',
-                    content: `You are a legislative research assistant. Your task is to search for information about a legislative bill based on the details provided. Focus on finding accurate information from reliable sources.
+                    content: `You are a legislative research assistant. Your task is to search for information about a legislative bill based on the details provided.
                     
-                    For basic information about the bill (bill number, name, state, year, sponsors, cosponsors, committee, and summary), RESTRICT your research to the following sources:
+                    FIND AND RESEARCH A SPECIFIC BILL matching the criteria provided. Then provide the following information:
+                    
+                    1. Basic bill information:
+                       - Bill Number (billNumber) - exact bill number
+                       - Bill Name (billName) - full title
+                       - State (state) - the state or federal jurisdiction
+                       - Year Introduced (yearIntroduced) - the year the bill was introduced
+                       - Sponsors (sponsors) - list all primary sponsors
+                       - Cosponsors (cosponsors) - list all cosponsors
+                       - Committee (committee) - committee referred to
+                    
+                    2. Bill summary:
+                       - Write at least 300 words summarizing the bill's purpose and provisions
+                       - Include a detailed breakdown of each section
+                       - Ensure the summary is comprehensive enough for a legislator to speak knowledgeably about it
+                       - Highlight key provisions, requirements, and implications
+                    
+                    3. Financial implications (write at least 150 words)
+                    
+                    4. Ideological leaning (write at least 150 words)
+                    
+                    5. Advocacy group positions (write at least 200 words)
+                    
+                    6. Changes to existing law (write at least 150 words)
+                    
+                    7. Similar laws in other states (write at least 150 words)
+                    
+                    8. Other factors to consider (write at least 150 words)
+                    
+                    For basic information (items #1-2), RESTRICT your research to:
                     - Official state legislature websites
                     - Congress.gov
-                    - U.S. House of Representatives website
-                    - U.S. Senate website
+                    - U.S. House and Senate websites
                     - Legiscan.com
                     - Billtrack50.com
                     
-                    For other aspects of the bill (financial implications, ideological leaning, advocacy positions, changes to law, similar laws, and other factors), you may use any reliable source.
+                    For items #3-8, you may use any reliable source.
                     
-                    Include citations for all information. Format your response as a JSON object.`
+                    Include citations for all information. Format your response as a JSON object with the following fields:
+                    - billNumber (string)
+                    - billName (string)
+                    - state (string)
+                    - yearIntroduced (string or number)
+                    - sponsors (string or array of strings)
+                    - cosponsors (string or array of strings)
+                    - committee (string)
+                    - summary (string, at least 300 words)
+                    - financialImplications (string, at least 150 words)
+                    - ideologicalLeaning (string, at least 150 words)
+                    - advocacyGroupPositions (string, at least 200 words)
+                    - changesTo (string, at least 150 words)
+                    - similarLaws (string, at least 150 words)
+                    - otherFactors (string, at least 150 words)
+                    - citations (array of strings)
+                    
+                    IMPORTANT: Each of the string fields should be a detailed paragraph, NOT an object or nested structure.`
                 },
                 {
                     role: 'user',
@@ -217,18 +377,73 @@ app.post('/api/search', async (req, res) => {
                     ${billName ? `Bill Name: ${billName}` : ''}
                     ${billNumber ? `Bill Number: ${billNumber}` : ''}
                     Jurisdiction: ${billState === 'federal' ? 'Federal (United States)' : billState}
+                    ${billYear ? `Year Introduced: ${billYear}` : ''}
                     ${additionalInfo ? `Additional Information: ${additionalInfo}` : ''}
                     
-                    Please provide as much detail as possible about this bill.`
+                    ${billYear ? `IMPORTANT: Only return results for bills introduced in ${billYear}. Do not include bills from other years.` : ''}
+                    
+                    Provide comprehensive information as specified in the instructions.`
                 }
             ],
             temperature: 0.3,
-            max_tokens: 3000,
+            max_tokens: 4000,
             response_format: { type: 'json_object' }
         });
 
-        const searchData = JSON.parse(searchPrompt.choices[0].message.content);
-
+        // Parse the JSON response and validate its structure
+        let searchData;
+        try {
+            searchData = JSON.parse(searchPrompt.choices[0].message.content);
+            console.log('Search results received from OpenAI');
+            
+            // If year was specified, verify the result matches
+            if (billYear && searchData.yearIntroduced) {
+                const resultYear = String(searchData.yearIntroduced);
+                const requestedYear = String(billYear);
+                
+                if (resultYear !== requestedYear) {
+                    return res.status(400).json({
+                        error: `No bill matching your criteria was found for the year ${billYear}. The search found a bill from ${resultYear} instead. Please try again with different search parameters or without specifying a year.`
+                    });
+                }
+            }
+            
+            // Validate that required fields are present and have appropriate values
+            const requiredStringFields = [
+                'billNumber', 'billName', 'state', 'committee', 'summary',
+                'financialImplications', 'ideologicalLeaning', 'advocacyGroupPositions',
+                'changesTo', 'similarLaws', 'otherFactors'
+            ];
+            
+            for (const field of requiredStringFields) {
+                if (!searchData[field]) {
+                    searchData[field] = `Information about ${field.replace(/([A-Z])/g, ' $1').toLowerCase()} could not be found.`;
+                } else if (typeof searchData[field] === 'object') {
+                    searchData[field] = `Information about ${field.replace(/([A-Z])/g, ' $1').toLowerCase()} is not available in the correct format.`;
+                }
+            }
+            
+            // Ensure arrays are properly handled
+            if (!searchData.citations || !Array.isArray(searchData.citations)) {
+                searchData.citations = [];
+            }
+            
+            // Handle sponsors and cosponsors which can be arrays or strings
+            if (!searchData.sponsors) {
+                searchData.sponsors = 'Not specified';
+            }
+            
+            if (!searchData.cosponsors) {
+                searchData.cosponsors = 'Not specified';
+            }
+            
+        } catch (error) {
+            console.error('Error parsing search data:', error);
+            return res.status(500).json({ 
+                error: 'Unable to find complete information about this bill. Please try with more specific details.'
+            });
+        }
+        
         res.json(searchData);
     } catch (error) {
         console.error('Error searching for bill:', error);
@@ -236,12 +451,47 @@ app.post('/api/search', async (req, res) => {
     }
 });
 
+// Simple health check endpoint
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', message: 'Server is running' });
+});
+
+// Add fallback for uploads directory
+app.use('/uploads', (req, res, next) => {
+    const uploadsDir = path.join(__dirname, 'uploads');
+    if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir);
+    }
+    next();
+});
+
 // Serve index.html for all other routes (SPA support)
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// Error handling middleware
+app.use((err, req, res, next) => {
+    console.error('Server error:', err);
+    res.status(500).json({
+        error: 'An unexpected error occurred on the server',
+        message: err.message
+    });
+});
+
 // Start the server
 app.listen(port, () => {
     console.log(`Server running on port ${port}`);
+    console.log(`Open your browser and navigate to http://localhost:${port}`);
+    console.log(`API endpoints available at:`);
+    console.log(`- POST /api/summarize (for bill analysis)`);
+    console.log(`- POST /api/search (for bill search)`);
+    console.log(`- GET /api/health (for server health check)`);
+    
+    // Make sure uploads directory exists
+    const uploadsDir = path.join(__dirname, 'uploads');
+    if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir);
+        console.log('Created uploads directory');
+    }
 });
